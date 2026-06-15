@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Analysis Engine (Stockfish)</title>
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #1e1e24;
+            --panel-bg: #2a2a36;
+            --border-color: #3f3f52;
+            --text-main: #f5f5f5;
+            --text-muted: #b0b0b5;
+            --accent-green: #4caf50;
+            --accent-gold: #ffb74d;
+        }
+
+        body {
+            font-family: 'Candara';
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            max-width: 1100px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .board-wrapper {
+            flex: 1;
+            min-width: 320px;
+            max-width: 480px;
+        }
+
+        .panel-wrapper {
+            flex: 1;
+            min-width: 340px;
+            max-width: 550px;
+            background-color: var(--panel-bg);
+            /*border-radius: 8px; I hate rounded borders*/
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        h2 {
+            margin: 0 0 5px 0;
+            font-size: 1.4rem;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .flex-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"], input[type="number"] {
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px;
+            /*border-radius: 4px;*/
+            font-size: 0.95rem;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+        }
+
+        button {
+            background-color: var(--accent-green);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            /*border-radius: 4px;*/
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #439a46;
+        }
+
+        #toggle-analysis {
+            background-color: #b83333;
+            width: 70px;
+            height: 30px;
+            padding: 5px;
+        }
+
+        .status-bar {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            background-color: var(--bg-dark);
+            padding: 8px 12px;
+            /*border-radius: 4px;*/
+            border-left: 4px solid var(--accent-green);
+        }
+
+        .analysis-box {
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            /*border-radius: 4px;*/
+            padding: 15px;
+            flex-grow: 1;
+            min-height: 220px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .analysis-line {
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed var(--border-color);
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .line-meta {
+            font-weight: bold;
+            color: var(--text-main);
+            margin-bottom: 12px;
+        }
+
+        .line-score {
+            color: var(--accent-gold);
+            font-weight: bold;
+            background: rgba(255, 183, 77, 0.1);
+            padding: 2px 6px;
+            /*border-radius: 3px;*/
+            margin-right: 5px;
+        }
+
+        .line-pv {
+            color: var(--text-main);
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="board-wrapper">
+        <div id="chess-board" style="width: 100%"></div>
+    </div>
+
+    <div class="panel-wrapper">
+        <h2>Engine Dashboard</h2>
+        
+        <div class="status-bar" id="status-display">White to move. Ready.</div>
+
+        <div class="control-group" style="flex-grow: 1;">
+            <div style="display: inline">
+                <button id="toggle-analysis" onclick="analysisOn ? stopAnalysis() : startAnalysis(false)">Stop</button>
+            </div>
+            <div class="analysis-box" id="analysis-output">
+                Waiting for engine initialization...
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label for="fen-input">IMPORT POSITION (FEN)</label>
+            <div class="flex-row">
+                <input type="text" id="fen-input" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+                <button onclick="importFEN()">Import</button>
+                <button onclick="resetFEN()">Reset</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label for="multipv-input">ANALYSIS LINES (MultiPV)</label>
+            <input type="number" id="multipv-input" value="3" min="1" max="5" style="width: 80px;" onchange="handleMultiPVChange()">
+        </div>
+    </div>
+</div>
+
+<script>
+    let board = null;
+    let game = new Chess();
+    let stockfish = null;
+    let currentLines = {};
+    const startFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let analysisOn = true;
+
+    // --- Configuration Details for Stockfish 18 ---
+    // Modern Stockfish implementations (v16+) use WebAssembly (WASM) splits.
+    // For universal browser execution without configuration issues, we use a hosted worker endpoint.
+    // If you download Stockfish 18 files locally, replace this string with your local worker script filename (e.g., './stockfish.js')
+    const STOCKFISH_WORKER_URL = 'stockfish-18-lite.js';
+
+    function initStockfish(firstMove=true) {
+        try {
+            stockfish = new Worker(STOCKFISH_WORKER_URL);
+            
+            // Listen for engine responses
+            stockfish.onmessage = function(event) {
+                parseEngineOutput(event.data);
+            };
+
+            // Initialize Universal Chess Interface (UCI)
+            stockfish.postMessage('uci');
+            stockfish.postMessage('isready');
+            stockfish.postMessage('setoption name Threads value 15');
+            
+            if (firstMove) {
+                document.getElementById('analysis-output').innerHTML = "Loading engine (7MB)...";
+            } else {
+                document.getElementById('analysis-output').innerHTML = ""
+            }
+            startAnalysis();
+        } catch (error) {
+            document.getElementById('analysis-output').innerHTML = "Error initializing Stockfish Web Worker. Ensure you are running through a local web server environment.";
+            console.error(error);
+        }
+    }
+
+    function convertPVToSAN(pvString) {
+        if (!pvString) return '';
+        
+        // Setup a temporary sandbox game matching our current position
+        let tempGame = new Chess(game.fen());
+        let uciMoves = pvString.split(/\s+/);
+        let sanMoves = [];
+
+        for (let i = 0; i < uciMoves.length; i++) {
+            let uci = uciMoves[i];
+            if (!uci) continue;
+
+            let from = uci.substring(0, 2);
+            let to = uci.substring(2, 4);
+            let promotion = uci.length === 5 ? uci.substring(4, 5) : undefined;
+
+            // Determine turn mechanics and move counter before execution
+            let turn = tempGame.turn();
+            let moveNum = parseInt(tempGame.fen().split(' ')[5]);
+            let prefix = '';
+
+            if (turn === 'w') {
+                prefix = moveNum + '. ';
+            } else if (i === 0) {
+                // If the engine calculation string leads directly with a black move
+                prefix = moveNum + '... ';
+            }
+
+            // Execute move on the sandbox board
+            let move = tempGame.move({ from: from, to: to, promotion: promotion });
+            
+            if (move) {
+                sanMoves.push(prefix + move.san);
+            } else {
+                // Fallback protection if parsing breaks down
+                console.log(uciMoves);
+                sanMoves.push(uci);
+                break;
+            }
+        }
+        return sanMoves.join(' ');
+    }
+
+    // Process standard UCI protocol strings emitted from Stockfish
+    function parseEngineOutput(line) {
+        if (line.startsWith('info') && line.includes('multipv')) {
+            const tokens = line.split(/\s+/);
+            
+            const mpvIndex = tokens[tokens.indexOf('multipv') + 1];
+            const depthIndex = tokens.indexOf('depth');
+            const depth = depthIndex !== -1 ? tokens[depthIndex + 1] : '?';
+            
+            // Evaluate Score
+            let scoreStr = '0.00';
+            if (tokens.includes('cp')) {
+                const cpVal = parseInt(tokens[tokens.indexOf('cp') + 1]);
+                // Shift evaluation display perspective based on active player turn
+                let scoreValue = (cpVal / 100).toFixed(2) * (game.turn() === 'b' ? -1 : 1);
+                scoreStr = scoreValue > 0 ? `+${scoreValue}` : scoreValue;
+            } else if (tokens.includes('mate')) {
+                const mateVal = tokens[tokens.indexOf('mate') + 1];
+                scoreStr = `M#${mateVal}`;
+            }
+
+            // Extract Projected Moves List (Principal Variation)
+            const pvIndex = tokens.indexOf('pv');
+            let moves = '';
+            if (pvIndex !== -1) {
+                moves = tokens.slice(pvIndex + 1).join(' ');
+            }
+
+            // Update collection object
+            currentLines[mpvIndex] = {
+                depth: depth,
+                score: scoreStr,
+                pv: convertPVToSAN(moves)
+            };
+
+            renderAnalysisDisplay();
+        }
+    }
+
+    function renderAnalysisDisplay() {
+        const displayBox = document.getElementById('analysis-output');
+        displayBox.innerHTML = '';
+
+        // Sort lines logically based on rankings
+        const sortedLines = Object.keys(currentLines).sort((a, b) => a - b);
+    
+        const depthDisp = document.createElement('div');
+        depthDisp.classList.add("line-meta");
+        depthDisp.innerHTML = `Depth ${currentLines[sortedLines[0]].depth}`;
+        displayBox.appendChild(depthDisp);
+
+        sortedLines.forEach(key => {
+            const data = currentLines[key];
+            const lineItem = document.createElement('div');
+            lineItem.className = 'analysis-line';
+
+            const movesToShow = 6;
+            let slicedPv = data.pv.split(" ").slice(0, movesToShow*3 - game.history().length%2).join(" ");
+
+            lineItem.innerHTML = `
+                <span class="line-score">${data.score}</span>
+                <span class="line-pv">${slicedPv}</span>
+            `;
+            displayBox.appendChild(lineItem);
+        });
+    }
+
+    function startAnalysis(restart=true) {
+        if (!stockfish) return;
+
+        // Reset previous processing actions
+        if (restart) {
+            stockfish.postMessage('stop');
+            currentLines = {};
+        }
+        
+        const linesRequested = document.getElementById('multipv-input').value;
+        
+        // Pass preferences to engine configuration parameters
+        if (restart) {
+            stockfish.postMessage(`setoption name MultiPV value ${linesRequested}`);
+            stockfish.postMessage(`position fen ${game.fen()}`);
+        }
+        stockfish.postMessage('go infinite'); // Depth 14 offers instantaneous browser feedback
+
+        analysisOn = true;
+        document.getElementById("toggle-analysis").innerText = "Stop";
+        document.getElementById("toggle-analysis").style.backgroundColor = "#b83333";
+    }
+
+    function stopAnalysis() {
+        if (!stockfish) return;
+        stockfish.postMessage('stop');
+        currentLines = {};
+
+        analysisOn = false;
+        document.getElementById("toggle-analysis").innerText = "Start";
+        document.getElementById("toggle-analysis").style.backgroundColor = "#439a46";
+    }
+
+    // --- Move Validation Rules (Chessboard.js integration) ---
+    function onDragStart(source, piece, position, orientation) {
+        if (game.game_over()) return false;
+
+        // Prevent active side dragging opposite color units
+        if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+            (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+            return false;
+        }
+    }
+
+    function onDrop(source, target) {
+        // Evaluate legal parameters
+        let move = game.move({
+            from: source,
+            to: target,
+            promotion: 'q' // Defaults automatically to Queen for user fluid operation
+        });
+
+        if (move === null) return 'snapback';
+
+        updateGameStatus(true);
+    }
+
+    function onSnapEnd() {
+        board.position(game.fen());
+    }
+
+    function updateGameStatus(updateSf) {
+        let text = '';
+        const sideToMove = game.turn() === 'w' ? 'White' : 'Black';
+
+        if (game.in_checkmate()) {
+            text = `Game over. ${sideToMove} is in checkmate.`;
+        } else if (game.in_draw()) {
+            text = 'Game over. Draw position reached.';
+        } else {
+            text = `${sideToMove} to move.`;
+            if (game.in_check()) text += ' (In Check!)';
+        }
+
+        document.getElementById('status-display').textContent = text;
+        document.getElementById('fen-input').value = game.fen();
+
+        if (updateSf) {
+            //stockfish.terminate();
+            //initStockfish(false);
+            startAnalysis();
+        }
+    }
+
+    // --- Action Inputs UI Hooks ---
+    function importFEN() {
+        const prospectiveFEN = document.getElementById('fen-input').value.trim();
+        
+        if (game.load(prospectiveFEN)) {
+            board.position(prospectiveFEN);
+            updateGameStatus(true);
+        } else {
+            alert("Invalid FEN layout string. Please verify formatting syntax.");
+        }
+    }
+
+    function resetFEN() {
+        if (game.load(startFEN)) {
+            board.position(startFEN);
+            updateGameStatus(true);
+        }
+    }
+
+    function handleMultiPVChange() {
+        // Enforce basic user constraints limits
+        const target = document.getElementById('multipv-input');
+        if (target.value < 1) target.value = 1;
+        if (target.value > 5) target.value = 5;
+        
+        startAnalysis();
+    }
+
+    // Initialization hook
+    $(document).ready(function() {
+        board = Chessboard('chess-board', {
+            draggable: true,
+            pieceTheme: "piece-images/{piece}.png",
+            position: 'start',
+            onDragStart: onDragStart,
+            onDrop: onDrop,
+            onSnapEnd: onSnapEnd
+        });
+
+        updateGameStatus(false);
+        initStockfish();
+    });
+</script>
+
+</body>
+</html>
