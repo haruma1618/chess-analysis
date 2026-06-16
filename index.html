@@ -72,10 +72,12 @@
         }
 
         #moves-wrapper-left {
-            border-width: 2px 0 0 2px;
-            border-color: var(--border-color);
+            border-width: 2px 0 2px 0;
+            border-color: var(--border-color) black var(--bg-dark) black;
             border-style: solid;
             display: flex;
+            flex: 1;
+            overflow-y: auto;
         }
 
         .moves-col {
@@ -83,8 +85,15 @@
             margin: 0;
         }
 
-        .move-div {
+        #moves-white > .move-div {
+            border-width: 0 2px 2px 2px;
+        }
+
+        #moves-black > .move-div {
             border-width: 0 2px 2px 0;
+        }
+        
+        .move-div {
             border-color: var(--border-color);
             border-style: solid;
             padding: 3px;
@@ -193,6 +202,22 @@
             color: var(--text-main);
             /*word-break: break-all;*/
         }
+
+        .white-1e1d7 {
+            background-color: hsl(93, 28%, 80%) !important;
+        }
+
+        .black-3c85d {
+            background-color: hsl(94, 24%, 41%) !important;
+        }
+
+        .highlight1-32417, .highlight2-9c5d2 {
+            box-shadow: inset 0 0 2px 2px hsl(60, 100%, 50%);
+        }
+
+        .highlight-move {
+            box-shadow: inset 0 0 2px 2px hsl(90, 100%, 50%);
+        }
     </style>
 </head>
 <body>
@@ -219,7 +244,7 @@
 
         <div class="control-group" style="flex-grow: 1;">
             <div>
-                <button id="toggle-analysis" onclick="analysisOn ? stopAnalysis() : startAnalysis(false)">Stop</button>
+                <button id="toggle-analysis" style="background-color: #b83333" onclick="toggleAnalysis()">Stop</button>
             </div>
             <div class="analysis-box" id="analysis-output">
                 Waiting for engine initialization...
@@ -250,6 +275,8 @@
     let currentLines = {};
     const startFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let analysisOn = true;
+    let prevFEN;
+    let prevMultiPV;
     const redoStack = [];
 
     // --- Configuration Details for Stockfish 18 ---
@@ -258,25 +285,25 @@
     // If you download Stockfish 18 files locally, replace this string with your local worker script filename (e.g., "./stockfish.js")
     const STOCKFISH_WORKER_URL = "stockfish-18.js";
 
-    function initStockfish(firstMove=true) {
+    function initStockfish() {
         try {
             stockfish = new Worker(STOCKFISH_WORKER_URL);
             
             // Listen for engine responses
             stockfish.onmessage = function(event) {
                 parseEngineOutput(event.data);
+                console.log(event.data);
             };
 
             // Initialize Universal Chess Interface (UCI)
             stockfish.postMessage("uci");
             stockfish.postMessage("isready");
             stockfish.postMessage("setoption name Threads value 12");
+            //stockfish.postMessage("setoption name Hash value 128");
+            stockfish.postMessage(`setoption name MultiPV value ${document.getElementById("multipv-input").value}`);
             
-            if (firstMove) {
-                document.getElementById("analysis-output").innerHTML = "Loading Stockfish 18 (108MB WASM)...";
-            } else {
-                document.getElementById("analysis-output").innerHTML = ""
-            }
+            document.getElementById("analysis-output").innerHTML = "Loading Stockfish 18 (108MB WASM)...";
+    
             startAnalysis();
         } catch (error) {
             document.getElementById("analysis-output").innerHTML = "Error initializing Stockfish Web Worker. Ensure you are running through a local web server environment.";
@@ -329,6 +356,7 @@
     function parseEngineOutput(line) {
         if (line.startsWith("info") && line.includes("multipv")) {
             const tokens = line.split(/\s+/);
+            if (tokens.includes("upperbound") || tokens.includes("lowerbound")) return;
             
             const mpvIndex = tokens[tokens.indexOf("multipv") + 1];
             const depthIndex = tokens.indexOf("depth");
@@ -352,6 +380,9 @@
             if (pvIndex !== -1) {
                 moves = tokens.slice(pvIndex + 1).join(" ");
             }
+            
+            // Prevent very short lines from being shown
+            if (parseInt(depth) > 10 && moves.split(" ").length < 4) return;
 
             // Update collection object
             currentLines[mpvIndex] = {
@@ -378,8 +409,8 @@
 
         const depthDisp = document.createElement("div");
         depthDisp.classList.add("line-meta");
-        depthDisp.innerHTML = `Depth ${currentLines[sortedLines[0]].depth} ${moveText}`;
         displayBox.appendChild(depthDisp);
+        let minDepth = 100;
 
         sortedLines.forEach(key => {
             const data = currentLines[key];
@@ -393,7 +424,10 @@
             let pvFirstMove = data.pv.split(" ").slice(0, 2).join(" ");
             let slicedPv = data.pv.split(" ").slice(2, movesToShow*3 - game.history().length%2).join(" ");
 
-            //console.log(data.score);            
+            //console.log(data.score);        
+            if (parseInt(data.depth) < minDepth) {
+                minDepth = parseInt(data.depth);
+            }    
 
             lineItem.innerHTML = `
                 <span class="line-score">${data.score}</span>
@@ -403,39 +437,43 @@
             `;
             displayBox.appendChild(lineItem);
         });
+
+        depthDisp.innerHTML = `Depth ${minDepth} ${moveText}`;
     }
 
-    function startAnalysis(restart=true) {
+    function startAnalysis(/*restart=true*/) {
         if (!stockfish) return;
+        if (!analysisOn) return;
 
         // Reset previous processing actions
-        if (restart) {
-            stockfish.postMessage("stop");
-            currentLines = {};
-        }
-        
-        const linesRequested = document.getElementById("multipv-input").value;
-        
-        // Pass preferences to engine configuration parameters
-        if (restart) {
-            stockfish.postMessage(`setoption name MultiPV value ${linesRequested}`);
-            stockfish.postMessage(`position fen ${game.fen()}`);
-        }
-        stockfish.postMessage("go depth 100");
-
-        analysisOn = true;
-        document.getElementById("toggle-analysis").innerText = "Stop";
-        document.getElementById("toggle-analysis").style.backgroundColor = "#b83333";
-    }
-
-    function stopAnalysis() {
-        if (!stockfish) return;
         stockfish.postMessage("stop");
         currentLines = {};
+        
+        // Pass preferences to engine configuration parameters
+        if (prevFEN != game.fen()) {
+            stockfish.postMessage(`position fen ${game.fen()}`);
+            prevFEN = game.fen();
+        }
 
-        analysisOn = false;
-        document.getElementById("toggle-analysis").innerText = "Start";
-        document.getElementById("toggle-analysis").style.backgroundColor = "#439a46";
+        stockfish.postMessage("go depth 99");
+    }
+
+    function toggleAnalysis() {
+        if (!stockfish) return;
+
+        if (analysisOn) {
+            analysisOn = !analysisOn;
+
+            stockfish.postMessage("stop");
+            document.getElementById("toggle-analysis").innerText = "Start";
+            document.getElementById("toggle-analysis").style.backgroundColor = "#439a46";
+        } else {
+            analysisOn = !analysisOn;
+
+            startAnalysis();
+            document.getElementById("toggle-analysis").innerText = "Stop";
+            document.getElementById("toggle-analysis").style.backgroundColor = "#b83333";
+        }
     }
 
     // --- Move Validation Rules (Chessboard.js integration) ---
@@ -461,7 +499,7 @@
 
         if (move === null) return "snapback";
 
-        console.log(move);
+        //console.log(move);
         if (move.promotion) {
             game.undo();
             let promType = prompt("Promotion type (q/r/n/b):");
@@ -476,6 +514,10 @@
             });
         }
 
+        $("#chess-board .square-55d63").removeClass("highlight-move");
+        $("#chess-board .square-" + source).addClass("highlight-move");
+        $("#chess-board .square-" + target).addClass("highlight-move");
+
         // Remove overwritten move elems
         let moveElems = Array.from(document.getElementsByClassName("move-div"));
         for (let i = 0; i < moveElems.length; i++) {
@@ -485,7 +527,6 @@
                 elem.remove();
             }
         }
-
 
         let moveElem = document.createElement("div");
         moveElem.innerText = move.san + " ";
@@ -499,6 +540,7 @@
             document.getElementById("moves-black").appendChild(moveElem);
         }
 
+        document.getElementById("analysis-output").innerHTML = "";
         updateMoveHighlight();
         updateGameStatus();
         startAnalysis();
@@ -541,30 +583,28 @@
     }
 
     // --- Action Inputs UI Hooks ---
-    function importFEN() {
-        const fen = document.getElementById("fen-input").value.trim();
+    function importFEN(fen) {
+        if (fen === undefined) {
+            fen = document.getElementById("fen-input").value.trim();
+        }
         
         if (game.load(fen)) {
             board.position(fen);
             updateGameStatus();
             startAnalysis();
+
+            document.getElementById("analysis-output").innerHTML = "";
             document.getElementById("moves-white").replaceChildren();
             document.getElementById("moves-black").replaceChildren();
             document.getElementById("start-position-text").innerText = fen;
+            $("#chess-board .square-55d63").removeClass("highlight-move");
         } else {
             alert("Invalid FEN layout string. Please verify formatting syntax.");
         }
     }
 
     function resetFEN() {
-        if (game.load(startFEN)) {
-            board.position(startFEN);
-            updateGameStatus();
-            startAnalysis();
-            document.getElementById("moves-white").replaceChildren();
-            document.getElementById("moves-black").replaceChildren();
-            document.getElementById("start-position-text").innerText = startFEN;
-        }
+        importFEN(startFEN);
     }
 
     function handleMultiPVChange() {
@@ -572,6 +612,9 @@
         const target = document.getElementById("multipv-input");
         if (target.value < 1) target.value = 1;
         if (target.value > 5) target.value = 5;
+
+        const linesRequested = target.value;
+        stockfish.postMessage(`setoption name MultiPV value ${linesRequested}`);
         
         startAnalysis();
     }
@@ -583,6 +626,7 @@
             board.position(game.fen());
             startAnalysis();
             updateMoveHighlight();
+            $("#chess-board .square-55d63").removeClass("highlight-move");
 
             return move;
         }
@@ -596,6 +640,9 @@
             board.position(game.fen());
             startAnalysis();
             updateMoveHighlight();
+            $("#chess-board .square-55d63").removeClass("highlight-move");
+            $("#chess-board .square-" + move.from).addClass("highlight-move");
+            $("#chess-board .square-" + move.to).addClass("highlight-move");
 
             return move;
         }
