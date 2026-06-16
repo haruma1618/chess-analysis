@@ -12,9 +12,9 @@
 
     <style>
         :root {
-            --bg-dark: #1e1e24;
-            --panel-bg: #2a2a36;
-            --border-color: #3f3f52;
+            --bg-dark: #221e24;
+            --panel-bg: #2e2735;
+            --border-color: #4c3f52;
             --text-main: #f5f5f5;
             --text-muted: #b0b0b5;
             --accent-green: #4caf50;
@@ -22,11 +22,11 @@
         }
 
         body {
-            font-family: 'Candara';
+            font-family: "Candara";
             background-color: var(--bg-dark);
             color: var(--text-main);
             margin: 0;
-            padding: 20px;
+            padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -37,21 +37,24 @@
             display: flex;
             flex-wrap: wrap;
             gap: 30px;
-            max-width: 1100px;
+            /*max-width: 1100px;*/
             width: 100%;
+            height: 100%;
             justify-content: center;
+            align-items: center;
+            padding: 30px;
         }
 
         .board-wrapper {
             flex: 1;
-            min-width: 320px;
-            max-width: 480px;
+            min-width: 360px;
+            max-width: 540px;
         }
 
         .panel-wrapper {
             flex: 1;
-            min-width: 340px;
-            max-width: 550px;
+            min-width: 240px;
+            max-width: 360px;
             background-color: var(--panel-bg);
             /*border-radius: 8px; I hate rounded borders*/
             padding: 20px;
@@ -59,6 +62,36 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            min-height: 80vh;
+        }
+
+        #panel-wrapper-left {
+            min-width: 200px;
+            max-width: 300px;
+            padding: 15px;
+        }
+
+        #moves-wrapper-left {
+            border-width: 2px 0 0 2px;
+            border-color: var(--border-color);
+            border-style: solid;
+            display: flex;
+        }
+
+        .moves-col {
+            width: 50%;
+            margin: 0;
+        }
+
+        .move-div {
+            border-width: 0 2px 2px 0;
+            border-color: var(--border-color);
+            border-style: solid;
+            padding: 3px;
+        }
+
+        .move-selected {
+            background-color: #87599d;
         }
 
         h2 {
@@ -102,7 +135,7 @@
             background-color: var(--accent-green);
             color: white;
             border: none;
-            padding: 10px 18px;
+            padding: 8px 12px;
             /*border-radius: 4px;*/
             cursor: pointer;
             font-weight: bold;
@@ -111,13 +144,6 @@
 
         button:hover {
             background-color: #439a46;
-        }
-
-        #toggle-analysis {
-            background-color: #b83333;
-            width: 70px;
-            height: 30px;
-            padding: 5px;
         }
 
         .status-bar {
@@ -165,24 +191,34 @@
 
         .line-pv {
             color: var(--text-main);
-            word-break: break-all;
+            /*word-break: break-all;*/
         }
     </style>
 </head>
 <body>
 
 <div class="app-container">
+    <div class="panel-wrapper" id="panel-wrapper-left">
+        <div style="font-size: 14px">Starting position:&nbsp;
+            <span id="start-position-text"></span>
+        </div>
+        <div id="moves-wrapper-left">
+            <div class="moves-col" id="moves-white"></div>
+            <div class="moves-col" id="moves-black"></div>
+        </div>
+    </div>
+
     <div class="board-wrapper">
         <div id="chess-board" style="width: 100%"></div>
     </div>
 
     <div class="panel-wrapper">
-        <h2>Engine Dashboard</h2>
+        <!--<h2>Engine Dashboard</h2>-->
         
         <div class="status-bar" id="status-display">White to move. Ready.</div>
 
         <div class="control-group" style="flex-grow: 1;">
-            <div style="display: inline">
+            <div>
                 <button id="toggle-analysis" onclick="analysisOn ? stopAnalysis() : startAnalysis(false)">Stop</button>
             </div>
             <div class="analysis-box" id="analysis-output">
@@ -192,10 +228,10 @@
 
         <div class="control-group">
             <label for="fen-input">IMPORT POSITION (FEN)</label>
-            <div class="flex-row">
-                <input type="text" id="fen-input" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
-                <button onclick="importFEN()">Import</button>
-                <button onclick="resetFEN()">Reset</button>
+            <div>
+                <input type="text" id="fen-input" placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+                <button style="margin-left: 5px" onclick="importFEN()">Import</button>
+                <button style="margin-left: 5px" onclick="resetFEN()">Reset</button>
             </div>
         </div>
 
@@ -214,12 +250,13 @@
     let currentLines = {};
     const startFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let analysisOn = true;
+    const redoStack = [];
 
     // --- Configuration Details for Stockfish 18 ---
     // Modern Stockfish implementations (v16+) use WebAssembly (WASM) splits.
     // For universal browser execution without configuration issues, we use a hosted worker endpoint.
-    // If you download Stockfish 18 files locally, replace this string with your local worker script filename (e.g., './stockfish.js')
-    const STOCKFISH_WORKER_URL = 'stockfish-18-lite.js';
+    // If you download Stockfish 18 files locally, replace this string with your local worker script filename (e.g., "./stockfish.js")
+    const STOCKFISH_WORKER_URL = "stockfish-18.js";
 
     function initStockfish(firstMove=true) {
         try {
@@ -231,24 +268,24 @@
             };
 
             // Initialize Universal Chess Interface (UCI)
-            stockfish.postMessage('uci');
-            stockfish.postMessage('isready');
-            stockfish.postMessage('setoption name Threads value 15');
+            stockfish.postMessage("uci");
+            stockfish.postMessage("isready");
+            stockfish.postMessage("setoption name Threads value 12");
             
             if (firstMove) {
-                document.getElementById('analysis-output').innerHTML = "Loading engine (7MB)...";
+                document.getElementById("analysis-output").innerHTML = "Loading Stockfish 18 (108MB WASM)...";
             } else {
-                document.getElementById('analysis-output').innerHTML = ""
+                document.getElementById("analysis-output").innerHTML = ""
             }
             startAnalysis();
         } catch (error) {
-            document.getElementById('analysis-output').innerHTML = "Error initializing Stockfish Web Worker. Ensure you are running through a local web server environment.";
+            document.getElementById("analysis-output").innerHTML = "Error initializing Stockfish Web Worker. Ensure you are running through a local web server environment.";
             console.error(error);
         }
     }
 
     function convertPVToSAN(pvString) {
-        if (!pvString) return '';
+        if (!pvString) return "";
         
         // Setup a temporary sandbox game matching our current position
         let tempGame = new Chess(game.fen());
@@ -265,14 +302,14 @@
 
             // Determine turn mechanics and move counter before execution
             let turn = tempGame.turn();
-            let moveNum = parseInt(tempGame.fen().split(' ')[5]);
-            let prefix = '';
+            let moveNum = parseInt(tempGame.fen().split(" ")[5]);
+            let prefix = "";
 
-            if (turn === 'w') {
-                prefix = moveNum + '. ';
+            if (turn === "w") {
+                prefix = moveNum + ". ";
             } else if (i === 0) {
                 // If the engine calculation string leads directly with a black move
-                prefix = moveNum + '... ';
+                prefix = moveNum + "... ";
             }
 
             // Execute move on the sandbox board
@@ -281,41 +318,39 @@
             if (move) {
                 sanMoves.push(prefix + move.san);
             } else {
-                // Fallback protection if parsing breaks down
-                console.log(uciMoves);
-                sanMoves.push(uci);
+                // console.log(uciMoves);
                 break;
             }
         }
-        return sanMoves.join(' ');
+        return sanMoves.join(" ");
     }
 
     // Process standard UCI protocol strings emitted from Stockfish
     function parseEngineOutput(line) {
-        if (line.startsWith('info') && line.includes('multipv')) {
+        if (line.startsWith("info") && line.includes("multipv")) {
             const tokens = line.split(/\s+/);
             
-            const mpvIndex = tokens[tokens.indexOf('multipv') + 1];
-            const depthIndex = tokens.indexOf('depth');
-            const depth = depthIndex !== -1 ? tokens[depthIndex + 1] : '?';
+            const mpvIndex = tokens[tokens.indexOf("multipv") + 1];
+            const depthIndex = tokens.indexOf("depth");
+            const depth = depthIndex !== -1 ? tokens[depthIndex + 1] : "?";
             
             // Evaluate Score
-            let scoreStr = '0.00';
-            if (tokens.includes('cp')) {
-                const cpVal = parseInt(tokens[tokens.indexOf('cp') + 1]);
+            let scoreStr = "0.00";
+            if (tokens.includes("cp")) {
+                const cpVal = parseInt(tokens[tokens.indexOf("cp") + 1]);
                 // Shift evaluation display perspective based on active player turn
-                let scoreValue = (cpVal / 100).toFixed(2) * (game.turn() === 'b' ? -1 : 1);
+                let scoreValue = (cpVal / 100).toFixed(2) * (game.turn() === "b" ? -1 : 1);
                 scoreStr = scoreValue > 0 ? `+${scoreValue}` : scoreValue;
-            } else if (tokens.includes('mate')) {
-                const mateVal = tokens[tokens.indexOf('mate') + 1];
+            } else if (tokens.includes("mate")) {
+                const mateVal = tokens[tokens.indexOf("mate") + 1] * (game.turn() === "b" ? -1 : 1);
                 scoreStr = `M#${mateVal}`;
             }
 
             // Extract Projected Moves List (Principal Variation)
-            const pvIndex = tokens.indexOf('pv');
-            let moves = '';
+            const pvIndex = tokens.indexOf("pv");
+            let moves = "";
             if (pvIndex !== -1) {
-                moves = tokens.slice(pvIndex + 1).join(' ');
+                moves = tokens.slice(pvIndex + 1).join(" ");
             }
 
             // Update collection object
@@ -330,28 +365,41 @@
     }
 
     function renderAnalysisDisplay() {
-        const displayBox = document.getElementById('analysis-output');
-        displayBox.innerHTML = '';
+        const displayBox = document.getElementById("analysis-output");
+        displayBox.innerHTML = "";
 
         // Sort lines logically based on rankings
         const sortedLines = Object.keys(currentLines).sort((a, b) => a - b);
-    
-        const depthDisp = document.createElement('div');
+        
+        let moveText = "";
+        if (game.history().length > 0) {
+            moveText = "&nbsp;(" + Math.floor((game.history().length+1)/2) + (game.history().length%2==1 ? ". " : "... ") + game.history().at(-1) + ")";
+        }
+
+        const depthDisp = document.createElement("div");
         depthDisp.classList.add("line-meta");
-        depthDisp.innerHTML = `Depth ${currentLines[sortedLines[0]].depth}`;
+        depthDisp.innerHTML = `Depth ${currentLines[sortedLines[0]].depth} ${moveText}`;
         displayBox.appendChild(depthDisp);
 
         sortedLines.forEach(key => {
             const data = currentLines[key];
-            const lineItem = document.createElement('div');
-            lineItem.className = 'analysis-line';
+            if (data.pv == "") return;
+
+            const lineItem = document.createElement("div");
+            lineItem.className = "analysis-line";
 
             const movesToShow = 6;
-            let slicedPv = data.pv.split(" ").slice(0, movesToShow*3 - game.history().length%2).join(" ");
+
+            let pvFirstMove = data.pv.split(" ").slice(0, 2).join(" ");
+            let slicedPv = data.pv.split(" ").slice(2, movesToShow*3 - game.history().length%2).join(" ");
+
+            //console.log(data.score);            
 
             lineItem.innerHTML = `
                 <span class="line-score">${data.score}</span>
-                <span class="line-pv">${slicedPv}</span>
+                <span class="line-pv">
+                    <span style="color:#fc9; font-weight:bold">${pvFirstMove}</span>&nbsp;${slicedPv}
+                </span>
             `;
             displayBox.appendChild(lineItem);
         });
@@ -362,18 +410,18 @@
 
         // Reset previous processing actions
         if (restart) {
-            stockfish.postMessage('stop');
+            stockfish.postMessage("stop");
             currentLines = {};
         }
         
-        const linesRequested = document.getElementById('multipv-input').value;
+        const linesRequested = document.getElementById("multipv-input").value;
         
         // Pass preferences to engine configuration parameters
         if (restart) {
             stockfish.postMessage(`setoption name MultiPV value ${linesRequested}`);
             stockfish.postMessage(`position fen ${game.fen()}`);
         }
-        stockfish.postMessage('go infinite'); // Depth 14 offers instantaneous browser feedback
+        stockfish.postMessage("go depth 100");
 
         analysisOn = true;
         document.getElementById("toggle-analysis").innerText = "Stop";
@@ -382,7 +430,7 @@
 
     function stopAnalysis() {
         if (!stockfish) return;
-        stockfish.postMessage('stop');
+        stockfish.postMessage("stop");
         currentLines = {};
 
         analysisOn = false;
@@ -395,59 +443,114 @@
         if (game.game_over()) return false;
 
         // Prevent active side dragging opposite color units
-        if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-            (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+        if ((game.turn() === "w" && piece.search(/^b/) !== -1) ||
+            (game.turn() === "b" && piece.search(/^w/) !== -1)) {
             return false;
         }
     }
 
     function onDrop(source, target) {
         // Evaluate legal parameters
+        let turn = game.turn();
+
         let move = game.move({
             from: source,
             to: target,
-            promotion: 'q' // Defaults automatically to Queen for user fluid operation
+            promotion: "q"
         });
 
-        if (move === null) return 'snapback';
+        if (move === null) return "snapback";
 
-        updateGameStatus(true);
+        console.log(move);
+        if (move.promotion) {
+            game.undo();
+            let promType = prompt("Promotion type (q/r/n/b):");
+            if (!(["q", "r", "n", "b"].includes(promType))) {
+                promType = "q";
+            }
+
+            let move = game.move({
+                from: source,
+                to: target,
+                promotion: promType
+            });
+        }
+
+        // Remove overwritten move elems
+        let moveElems = Array.from(document.getElementsByClassName("move-div"));
+        for (let i = 0; i < moveElems.length; i++) {
+            let elem = moveElems[i];
+            console.log("Elem: " + elem.innerText + " " + elem.getAttribute("moveNum") + " " + (game.history().length-1));
+            if (parseInt(elem.getAttribute("moveNum")) >= game.history().length-1) {
+                elem.remove();
+            }
+        }
+
+
+        let moveElem = document.createElement("div");
+        moveElem.innerText = move.san + " ";
+        moveElem.classList.add("move-div");
+        moveElem.setAttribute("moveNum", game.history().length-1);
+
+        if (turn === "w") {
+            moveElem.innerText = (game.history().length+1)/2 + ". " + moveElem.innerText;
+            document.getElementById("moves-white").appendChild(moveElem);
+        } else {
+            document.getElementById("moves-black").appendChild(moveElem);
+        }
+
+        updateMoveHighlight();
+        updateGameStatus();
+        startAnalysis();
+    }
+
+    function updateMoveHighlight() {
+        let prevSelected = document.getElementsByClassName("move-selected");
+        for (let elem of prevSelected) {
+            elem.classList.remove("move-selected");
+        }
+
+        let moveElems = document.getElementsByClassName("move-div");
+        for (let elem of moveElems) {
+            if (parseInt(elem.getAttribute("moveNum")) === game.history().length-1) {
+                elem.classList.add("move-selected");
+                break;
+            }
+        }
     }
 
     function onSnapEnd() {
         board.position(game.fen());
     }
 
-    function updateGameStatus(updateSf) {
-        let text = '';
-        const sideToMove = game.turn() === 'w' ? 'White' : 'Black';
+    function updateGameStatus() {
+        let text = "";
+        const sideToMove = game.turn() === "w" ? "White" : "Black";
 
         if (game.in_checkmate()) {
             text = `Game over. ${sideToMove} is in checkmate.`;
         } else if (game.in_draw()) {
-            text = 'Game over. Draw position reached.';
+            text = "Game over. Draw position reached.";
         } else {
             text = `${sideToMove} to move.`;
-            if (game.in_check()) text += ' (In Check!)';
+            if (game.in_check()) text += " (In Check!)";
         }
 
-        document.getElementById('status-display').textContent = text;
-        document.getElementById('fen-input').value = game.fen();
-
-        if (updateSf) {
-            //stockfish.terminate();
-            //initStockfish(false);
-            startAnalysis();
-        }
+        document.getElementById("status-display").textContent = text;
+        document.getElementById("fen-input").value = game.fen();
     }
 
     // --- Action Inputs UI Hooks ---
     function importFEN() {
-        const prospectiveFEN = document.getElementById('fen-input').value.trim();
+        const fen = document.getElementById("fen-input").value.trim();
         
-        if (game.load(prospectiveFEN)) {
-            board.position(prospectiveFEN);
-            updateGameStatus(true);
+        if (game.load(fen)) {
+            board.position(fen);
+            updateGameStatus();
+            startAnalysis();
+            document.getElementById("moves-white").replaceChildren();
+            document.getElementById("moves-black").replaceChildren();
+            document.getElementById("start-position-text").innerText = fen;
         } else {
             alert("Invalid FEN layout string. Please verify formatting syntax.");
         }
@@ -456,31 +559,72 @@
     function resetFEN() {
         if (game.load(startFEN)) {
             board.position(startFEN);
-            updateGameStatus(true);
+            updateGameStatus();
+            startAnalysis();
+            document.getElementById("moves-white").replaceChildren();
+            document.getElementById("moves-black").replaceChildren();
+            document.getElementById("start-position-text").innerText = startFEN;
         }
     }
 
     function handleMultiPVChange() {
         // Enforce basic user constraints limits
-        const target = document.getElementById('multipv-input');
+        const target = document.getElementById("multipv-input");
         if (target.value < 1) target.value = 1;
         if (target.value > 5) target.value = 5;
         
         startAnalysis();
     }
 
+    function undoMove() {
+        const move = game.undo();
+        if (move) {
+            redoStack.push(move);
+            board.position(game.fen());
+            startAnalysis();
+            updateMoveHighlight();
+
+            return move;
+        }
+        return null;
+    }
+
+    function redoMove() {
+        if (redoStack.length > 0) {
+            const move = redoStack.pop();
+            game.move( {from: move.from, to: move.to, promotion: move.promotion} );
+            board.position(game.fen());
+            startAnalysis();
+            updateMoveHighlight();
+
+            return move;
+        }
+        return null;
+    }
+
+    document.addEventListener("keydown", function(e) {
+        if (e.key === "ArrowLeft") {
+            console.log("undo");
+            undoMove();
+        } else if (e.key === "ArrowRight") {
+            console.log("redo");
+            redoMove();
+        }
+    });
+
     // Initialization hook
     $(document).ready(function() {
-        board = Chessboard('chess-board', {
+        board = Chessboard("chess-board", {
             draggable: true,
             pieceTheme: "piece-images/{piece}.png",
-            position: 'start',
+            position: "start",
             onDragStart: onDragStart,
             onDrop: onDrop,
             onSnapEnd: onSnapEnd
         });
 
-        updateGameStatus(false);
+        resetFEN();
+        updateGameStatus();
         initStockfish();
     });
 </script>
